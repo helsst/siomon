@@ -6,6 +6,7 @@ pub mod h87;
 pub mod p67;
 pub mod q1900;
 pub mod trx50;
+pub mod w890;
 pub mod wrx90;
 pub mod x570;
 pub mod x670e;

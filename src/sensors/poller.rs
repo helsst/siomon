@@ -105,7 +105,12 @@ impl Poller {
 
             for source in &mut sources {
                 let t = Instant::now();
-                new_readings.extend(source.poll());
+                new_readings.extend(
+                    source
+                        .poll()
+                        .into_iter()
+                        .filter(|(id, _)| !is_hidden_sensor(&self.label_overrides, id)),
+                );
                 *durations.entry(source.name().to_string()).or_default() +=
                     t.elapsed().as_millis() as u64;
             }
@@ -188,6 +193,12 @@ fn join_or_log<T>(result: std::thread::Result<T>, name: &str) -> Option<T> {
     }
 }
 
+fn is_hidden_sensor(label_overrides: &HashMap<String, String>, id: &SensorId) -> bool {
+    label_overrides
+        .get(&id.to_string())
+        .is_some_and(|label| label.is_empty())
+}
+
 fn discover_all_sources(
     no_nvidia: bool,
     direct_io: bool,
@@ -266,10 +277,10 @@ fn discover_all_sources(
 
                 let buses = crate::sensors::i2c::bus_scan::enumerate_smbus_adapters();
                 dio_sources.push(Box::new(
-                    crate::sensors::i2c::spd5118::Spd5118Source::discover(&buses),
+                    crate::sensors::i2c::spd5118::Spd5118Source::discover(board, &buses),
                 ));
                 dio_sources.push(Box::new(crate::sensors::i2c::pmbus::PmbusSource::discover(
-                    &buses,
+                    board, &buses,
                 )));
                 let ddr5_config = board.and_then(|b| b.ddr5_bus_config);
                 let ddr5_reqs = board
@@ -360,8 +371,44 @@ pub fn snapshot(
     let mut map = HashMap::new();
     for source in &mut sources {
         for (id, reading) in source.poll() {
+            if is_hidden_sensor(label_overrides, &id) {
+                continue;
+            }
             map.insert(id, reading);
         }
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_label_override_hides_sensor() {
+        let mut labels = HashMap::new();
+        labels.insert("superio/nct6798/fan1".into(), String::new());
+
+        let id = SensorId {
+            source: "superio".into(),
+            chip: "nct6798".into(),
+            sensor: "fan1".into(),
+        };
+
+        assert!(is_hidden_sensor(&labels, &id));
+    }
+
+    #[test]
+    fn nonempty_label_override_keeps_sensor_visible() {
+        let mut labels = HashMap::new();
+        labels.insert("hwmon/nct6686/fan1".into(), "CPU Fan 1".into());
+
+        let id = SensorId {
+            source: "hwmon".into(),
+            chip: "nct6686".into(),
+            sensor: "fan1".into(),
+        };
+
+        assert!(!is_hidden_sensor(&labels, &id));
+    }
 }

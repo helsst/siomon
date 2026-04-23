@@ -3,7 +3,6 @@ use std::os::unix::io::AsRawFd;
 
 // Linux I2C ioctl request codes (from <linux/i2c-dev.h>)
 const I2C_SLAVE: libc::c_ulong = 0x0703;
-const I2C_SLAVE_FORCE: libc::c_ulong = 0x0706;
 const I2C_SMBUS: libc::c_ulong = 0x0720;
 
 // SMBus transfer direction
@@ -40,25 +39,17 @@ pub struct SmbusDevice {
 impl SmbusDevice {
     /// Open `/dev/i2c-{bus}` and bind to the given 7-bit slave address.
     ///
-    /// Tries `I2C_SLAVE` first; falls back to `I2C_SLAVE_FORCE` if the
-    /// address is already claimed by a kernel driver (EBUSY).
+    /// Uses `I2C_SLAVE` only. We intentionally do not fall back to
+    /// `I2C_SLAVE_FORCE` because trusted kernel drivers should own their
+    /// devices, and forcing raw userspace access around that ownership has
+    /// caused stability problems on some systems.
     pub fn open(bus: u32, addr: u16) -> std::io::Result<Self> {
         let path = format!("/dev/i2c-{bus}");
         let file = OpenOptions::new().read(true).write(true).open(&path)?;
 
         let ret = unsafe { libc::ioctl(file.as_raw_fd(), I2C_SLAVE, addr as libc::c_int) };
         if ret < 0 {
-            let err = std::io::Error::last_os_error();
-            if err.raw_os_error() == Some(libc::EBUSY) {
-                // Address claimed by kernel driver — force access
-                let ret2 =
-                    unsafe { libc::ioctl(file.as_raw_fd(), I2C_SLAVE_FORCE, addr as libc::c_int) };
-                if ret2 < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-            } else {
-                return Err(err);
-            }
+            return Err(std::io::Error::last_os_error());
         }
 
         Ok(Self { file })

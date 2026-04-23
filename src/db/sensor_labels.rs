@@ -114,6 +114,30 @@ mod tests {
     }
 
     #[test]
+    fn test_builtin_labels_asrock_z890_nova_nct6686() {
+        let labels = crate::db::boards::resolve_labels(
+            crate::db::boards::lookup_board_with_vendor("Z890 Nova WiFi", "ASRock").unwrap(),
+        );
+        assert_eq!(labels.get("hwmon/nct6686/fan1").unwrap(), "CPU Fan 1");
+        assert_eq!(labels.get("hwmon/nct6686/fan2").unwrap(), "CPU Fan 2");
+        assert_eq!(labels.get("hwmon/nct6686/fan7").unwrap(), "AIO Pump");
+        assert_eq!(labels.get("hwmon/nct6686/fan8").unwrap(), "Water Pump");
+    }
+
+    #[test]
+    fn test_builtin_labels_asus_w890e_hide_dead_superio_fans() {
+        let labels = crate::db::boards::resolve_labels(
+            crate::db::boards::lookup_board_with_vendor(
+                "Pro WS W890E-SAGE SE",
+                "ASUSTeK COMPUTER INC.",
+            )
+            .unwrap(),
+        );
+        assert_eq!(labels.get("superio/nct6799/fan1").unwrap(), "");
+        assert_eq!(labels.get("superio/nct6799/fan7").unwrap(), "");
+    }
+
+    #[test]
     fn test_builtin_labels_unknown_board() {
         let (labels, _) = load_labels(Some("Some Unknown Board"), &HashMap::new());
         assert!(labels.is_empty());

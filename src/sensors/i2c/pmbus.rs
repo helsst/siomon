@@ -131,7 +131,14 @@ impl PmbusSource {
     ///
     /// Returns an empty source if no devices are found or if `/dev/i2c-*`
     /// cannot be opened (e.g., insufficient permissions).
-    pub fn discover(buses: &[I2cBus]) -> Self {
+    pub fn discover(board: Option<&crate::db::boards::BoardTemplate>, buses: &[I2cBus]) -> Self {
+        if !crate::db::boards::allows_unsafe_pmbus_probe(board) {
+            log::info!("PMBus: skipping unsafe generic SMBus probe on this board");
+            return Self {
+                devices: Vec::new(),
+            };
+        }
+
         let mut devices = Vec::new();
         let mut vrm_index: u32 = 0;
 
@@ -570,7 +577,7 @@ mod tests {
 
     #[test]
     fn discover_returns_empty_without_hardware() {
-        let source = PmbusSource::discover(&[]);
+        let source = PmbusSource::discover(None, &[]);
         assert_eq!(source.device_count(), 0);
         assert!(source.poll().is_empty());
     }

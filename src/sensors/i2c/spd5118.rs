@@ -40,7 +40,12 @@ impl Spd5118Source {
     ///
     /// Returns an empty source (with no DIMM entries) if no devices are found
     /// or if `/dev/i2c-*` cannot be opened (e.g., insufficient permissions).
-    pub fn discover(buses: &[I2cBus]) -> Self {
+    pub fn discover(board: Option<&crate::db::boards::BoardTemplate>, buses: &[I2cBus]) -> Self {
+        if !crate::db::boards::allows_unsafe_spd5118_probe(board) {
+            log::info!("SPD5118: skipping unsafe generic SMBus probe on this board");
+            return Self { dimms: Vec::new() };
+        }
+
         let mut dimms = Vec::new();
         let mut dimm_index: u32 = 0;
 
@@ -260,7 +265,7 @@ mod tests {
     #[test]
     fn discover_returns_empty_without_hardware() {
         // With no buses, discover should return an empty source
-        let source = Spd5118Source::discover(&[]);
+        let source = Spd5118Source::discover(None, &[]);
         assert_eq!(source.dimm_count(), 0);
         assert!(source.poll().is_empty());
     }

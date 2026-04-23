@@ -144,6 +144,58 @@ pub static ASUS_AM5_NCT6798: [VoltageChannel; 18] = [
     VoltageChannel::direct("VIN17"),     // VIN17
 ];
 
+// ---------------------------------------------------------------------------
+// ASUS Pro WS W890E-SAGE SE (Intel W890, NCT6799D)
+// Labels/multipliers derived from a live direct-I/O scan on the target board
+// and correlated against the BMC/IPMI telemetry exposed by the same host.
+// ---------------------------------------------------------------------------
+pub static ASUS_W890E_SAGE: [VoltageChannel; 18] = [
+    VoltageChannel::direct("Vcore"),         // VIN0: ~0.90V at idle
+    VoltageChannel::new("+12V", 12.0),       // VIN1: 1.024V * 12.0 ~= 12.29V
+    VoltageChannel::direct("+3.3V Standby"), // VIN2: ~3.41V
+    VoltageChannel::direct("+3.3V"),         // VIN3: ~3.44V
+    VoltageChannel::direct("VIN4"),          // VIN4: unknown ~1.02V rail
+    VoltageChannel::direct("+0.82V PCH"),    // VIN5: ~0.82V
+    VoltageChannel::direct("VIN6"),          // VIN6: unknown ~0.91V rail
+    VoltageChannel::direct("+3.3V AUX"),     // VIN7: ~3.41V
+    VoltageChannel::direct("Vbat"),          // VIN8
+    VoltageChannel::direct("VNN MN 1.02V"),  // VIN9: ~0.99-1.00V
+    VoltageChannel::new("+5V", 5.7),         // VIN10: 0.896V * 5.7 ~= 5.11V
+    VoltageChannel::new("+5V Standby", 5.7), // VIN11: 0.896V * 5.7 ~= 5.11V
+    VoltageChannel::direct("VIN12"),         // VIN12: unknown ~1.05V rail
+    VoltageChannel::direct("VIN13"),         // VIN13: unknown ~1.69V rail
+    VoltageChannel::direct("VIN14"),         // VIN14: unknown ~1.00V rail
+    VoltageChannel::direct("VIN15"),         // VIN15: unknown ~0.88V rail
+    VoltageChannel::direct("+3.3V CPU"),     // VIN16: ~3.41V
+    VoltageChannel::direct("VIN17"),         // VIN17: unknown ~1.00V rail
+];
+
+// ---------------------------------------------------------------------------
+// ASRock Z890 Nova WiFi (Intel Z890, NCT6798D)
+// Labels/multipliers derived from the BIOS H/W Monitor page and validated
+// against live direct-I/O readings from the rebuilt debug binary.
+// ---------------------------------------------------------------------------
+pub static ASROCK_Z890_NOVA: [VoltageChannel; 18] = [
+    VoltageChannel::direct("Vcore"),          // VIN0: ~0.85-0.90V at idle
+    VoltageChannel::direct("VIN1"),           // VIN1: unstable / unknown
+    VoltageChannel::direct("+3.30V"),         // VIN2: ~3.42V
+    VoltageChannel::direct("+3.30V Standby"), // VIN3: ~3.38V
+    VoltageChannel::direct("+VNNAON"),        // VIN4: 0.768V
+    VoltageChannel::direct("VCCSA"),          // VIN5: 1.24V
+    VoltageChannel::direct("+0.82V PCH"),     // VIN6: 0.872V
+    VoltageChannel::direct("+3.30V AUX"),     // VIN7: ~3.42V
+    VoltageChannel::direct("Vbat"),           // VIN8
+    VoltageChannel::direct("VTT"),            // VIN9
+    VoltageChannel::new("+5.00V", 13.2),      // VIN10: 0.384V * 13.2 = 5.07V
+    VoltageChannel::new("+12.00V", 13.5),     // VIN11: 0.896V * 13.5 = 12.096V
+    VoltageChannel::direct("VIN12"),          // VIN12: unknown rail
+    VoltageChannel::new("ATX5VSB", 8.0),      // VIN13: 0.632V * 8.0 = 5.056V
+    VoltageChannel::direct("VDD2"),           // VIN14: 1.512V
+    VoltageChannel::direct("VIN15"),          // VIN15: unknown rail
+    VoltageChannel::direct("+VCC1.8V"),       // VIN16: 1.84V
+    VoltageChannel::direct("VIN17"),          // VIN17
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +218,38 @@ mod tests {
         let config = lookup_nct6798(Some("ROG CROSSHAIR X670E HERO"));
         assert!(config.is_some());
         assert_eq!(config.unwrap()[0].label, "Vcore");
+    }
+
+    #[test]
+    fn test_lookup_asrock_z890_nova() {
+        let config = crate::db::boards::lookup_board_with_vendor("Z890 Nova WiFi", "ASRock")
+            .and_then(|board| board.nct_voltage_scaling);
+        assert!(config.is_some());
+        let channels = config.unwrap();
+        assert_eq!(channels[10].label, "+5.00V");
+        assert_eq!(channels[10].multiplier, 13.2);
+        assert_eq!(channels[11].label, "+12.00V");
+        assert_eq!(channels[11].multiplier, 13.5);
+        assert_eq!(channels[13].label, "ATX5VSB");
+        assert_eq!(channels[13].multiplier, 8.0);
+    }
+
+    #[test]
+    fn test_lookup_asus_w890e_sage() {
+        let config = crate::db::boards::lookup_board_with_vendor(
+            "Pro WS W890E-SAGE SE",
+            "ASUSTeK COMPUTER INC.",
+        )
+        .and_then(|board| board.nct_voltage_scaling);
+        assert!(config.is_some());
+        let channels = config.unwrap();
+        assert_eq!(channels[0].label, "Vcore");
+        assert_eq!(channels[1].label, "+12V");
+        assert_eq!(channels[1].multiplier, 12.0);
+        assert_eq!(channels[10].label, "+5V");
+        assert_eq!(channels[10].multiplier, 5.7);
+        assert_eq!(channels[11].label, "+5V Standby");
+        assert_eq!(channels[16].label, "+3.3V CPU");
     }
 
     #[test]

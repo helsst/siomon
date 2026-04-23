@@ -176,6 +176,70 @@ sio runs without root and gracefully degrades:
 
 Fields requiring elevation show `[requires root]` or are omitted.
 
+### Running `--direct-io` Without Root
+
+`--direct-io` needs raw hardware access. The recommended path is the `sinfo_io`
+kernel module (`/dev/sinfo_io`), which avoids direct `/dev/port` access.
+
+1. Create a dedicated group:
+```bash
+sudo groupadd -f siomon
+```
+
+2. Add your user to that group:
+```bash
+sudo usermod -aG siomon "$USER"
+```
+
+3. Install a udev rule:
+```bash
+echo 'KERNEL=="sinfo_io", MODE="0660", GROUP="siomon"' | sudo tee /etc/udev/rules.d/99-siomon-sinfo-io.rules
+```
+
+4. Reload rules and trigger:
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --name-match=sinfo_io
+```
+
+5. Re-login (or reboot) so new group membership applies.
+
+Then verify:
+```bash
+ls -l /dev/sinfo_io
+sio sensors --direct-io
+```
+
+If `/dev/sinfo_io` is missing, the module is not loaded for your current
+kernel. Load/install `sinfo_io` first (DKMS or manual module install).
+
+Troubleshooting:
+
+- `sio` says `Cannot open /dev/port for Super I/O detection` and no `superio/*` sensors:
+  `--direct-io` could not access either `/dev/sinfo_io` or `/dev/port`.
+- `/dev/sinfo_io` is missing:
+  load the module for the running kernel (`sudo modprobe sinfo_io`), or install/rebuild it (DKMS/manual) for the current `uname -r`.
+- `modprobe: FATAL: Module sinfo_io not found`:
+  the module is not installed for this kernel version. Rebuild/install `sinfo_io` against the currently running kernel, then run `sudo depmod -a`.
+- `/dev/sinfo_io` exists but is `root:root` or mode `0600`:
+  udev rule did not apply. Re-run `udevadm control --reload-rules` and `udevadm trigger --name-match=sinfo_io`, or reload the module.
+- User is in `siomon` group but access still denied:
+  session has stale group memberships. Log out/in (or reboot), then verify with `id`.
+- Board hwmon driver exists but sensors still do not appear:
+  some drivers only bind with a force flag (example: `sudo modprobe nct6683 force=1` on ASRock Z890 Nova WiFi). Use only when you have confirmed it matches your board/chip.
+- Very new board, older kernel:
+  support for newer Super I/O / hwmon chips usually lands in newer kernels first; older LTS kernels often lack those IDs unless your distro backports them.
+
+### Board Notes
+
+- **ASRock Z890 Nova WiFi** -- board fan telemetry is exposed by an NCT6686D-class companion controller. On current kernels this requires loading the in-tree `nct6683` hwmon driver with `force=1`:
+
+```bash
+sudo modprobe nct6683 force=1
+```
+
+  Once loaded, the board fans appear under `hwmon/nct6686`.
+
 ## Building
 
 ### Prerequisites
