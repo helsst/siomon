@@ -494,27 +494,26 @@ fn run_loop(
                                     filter_mode = true;
                                 }
                                 // Tree-only keys
-                                KeyCode::Up | KeyCode::Char('k') if view_mode == ViewMode::Tree => {
-                                    if cursor > 0 {
-                                        cursor -= 1;
-                                        if let Some(&row_idx) = group_indices.get(cursor)
-                                            && row_idx < scroll_offset
-                                        {
-                                            scroll_offset = row_idx;
-                                        }
+                                KeyCode::Up | KeyCode::Char('k')
+                                    if view_mode == ViewMode::Tree && cursor > 0 =>
+                                {
+                                    cursor -= 1;
+                                    if let Some(&row_idx) = group_indices.get(cursor)
+                                        && row_idx < scroll_offset
+                                    {
+                                        scroll_offset = row_idx;
                                     }
                                 }
                                 KeyCode::Down | KeyCode::Char('j')
-                                    if view_mode == ViewMode::Tree =>
+                                    if view_mode == ViewMode::Tree
+                                        && cursor + 1 < group_indices.len() =>
                                 {
-                                    if cursor + 1 < group_indices.len() {
-                                        cursor += 1;
-                                        if let Some(&row_idx) = group_indices.get(cursor) {
-                                            let term_height = terminal.size()?.height as usize;
-                                            let visible = term_height.saturating_sub(6);
-                                            if row_idx >= scroll_offset + visible {
-                                                scroll_offset = row_idx.saturating_sub(visible / 2);
-                                            }
+                                    cursor += 1;
+                                    if let Some(&row_idx) = group_indices.get(cursor) {
+                                        let term_height = terminal.size()?.height as usize;
+                                        let visible = term_height.saturating_sub(6);
+                                        if row_idx >= scroll_offset + visible {
+                                            scroll_offset = row_idx.saturating_sub(visible / 2);
                                         }
                                     }
                                 }

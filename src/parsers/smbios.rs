@@ -138,20 +138,14 @@ fn parse_table(data: &[u8]) -> SmbiosData {
         }
 
         match struct_type {
-            0 => {
-                if result.bios.is_none() {
-                    result.bios = Some(parse_bios(structure_data, struct_len));
-                }
+            0 if result.bios.is_none() => {
+                result.bios = Some(parse_bios(structure_data, struct_len));
             }
-            1 => {
-                if result.system.is_none() {
-                    result.system = Some(parse_system(structure_data, struct_len));
-                }
+            1 if result.system.is_none() => {
+                result.system = Some(parse_system(structure_data, struct_len));
             }
-            2 => {
-                if result.baseboard.is_none() {
-                    result.baseboard = Some(parse_baseboard(structure_data, struct_len));
-                }
+            2 if result.baseboard.is_none() => {
+                result.baseboard = Some(parse_baseboard(structure_data, struct_len));
             }
             17 => {
                 if let Some(mem) = parse_memory_device(structure_data, struct_len) {
