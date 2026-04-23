@@ -334,6 +334,7 @@ pub const MSI_AM4_NCT6795_LABELS: &[(&str, &str)] = &[
 
 /// All known board templates. First match wins.
 static BOARDS: &[&BoardTemplate] = &[
+    &asus::w890::w890e_sage::BOARD,
     // ASUS WRX90E must come before ASRock WRX90 (excludes WRX90E)
     &asus::wrx90::wrx90e_sage::BOARD,
     &asrock::wrx90::wrx90_ws_evo::BOARD,
@@ -424,7 +425,7 @@ fn read_board_vendor() -> Option<String> {
     ))
 }
 
-fn lookup_board_with_vendor(
+pub(crate) fn lookup_board_with_vendor(
     board_name: &str,
     board_vendor: &str,
 ) -> Option<&'static BoardTemplate> {
@@ -544,6 +545,15 @@ mod tests {
         assert!(b.description.contains("Gigabyte"));
         assert!(b.ddr5_bus_config.is_some());
         assert_eq!(b.ddr5_bus_config.unwrap().i2c_buses, &[1, 2]);
+    }
+
+    #[test]
+    fn test_lookup_asus_w890e_sage() {
+        let b = lookup_board_with_vendor("Pro WS W890E-SAGE SE", "ASUSTeK COMPUTER INC.").unwrap();
+        assert!(b.description.contains("W890E"));
+        assert!(b.ddr5_bus_config.is_some());
+        assert_eq!(b.ddr5_bus_config.unwrap().i2c_buses, &[0, 2]);
+        assert_eq!(b.ddr5_bus_config.unwrap().slots_per_bus, 4);
     }
 
     #[test]
