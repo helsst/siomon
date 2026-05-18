@@ -122,7 +122,7 @@ jobs:
     uses: ./.github/workflows/publish-copr.yml
     with:
       tag: ${{ github.ref_name }}
-      project: 'level1techs/siomon'
+      project: 'phynecs/siomon'
       chroots: ''
       upload: true
     secrets:

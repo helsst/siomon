@@ -8,9 +8,9 @@ on:
         required: true
         type: string
       project:
-        description: 'Target COPR project (e.g., level1techs/siomon)'
+        description: 'Target COPR project (e.g., phynecs/siomon)'
         required: false
-        default: 'level1techs/siomon'
+        default: 'phynecs/siomon'
         type: string
       chroots:
         description: 'Space-separated COPR chroots, or empty for project defaults'
@@ -29,7 +29,7 @@ on:
         type: string
       project:
         required: false
-        default: 'level1techs/siomon'
+        default: 'phynecs/siomon'
         type: string
       chroots:
         required: false
@@ -51,7 +51,7 @@ permissions:
   contents: read
 
 env:
-  UPSTREAM_REPO: https://github.com/level1techs/siomon.git
+  UPSTREAM_REPO: https://github.com/helsst/siomon.git
 
 jobs:
   publish:
