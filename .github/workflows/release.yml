@@ -113,3 +113,19 @@ jobs:
       PKG_GIT_EMAIL: ${{ secrets.PKG_GIT_EMAIL }}
       LAUNCHPAD_SSH_PRIVATE_KEY: ${{ secrets.LAUNCHPAD_SSH_PRIVATE_KEY }}
       LAUNCHPAD_LOGIN: ${{ secrets.LAUNCHPAD_LOGIN }}
+
+  publish-copr:
+    name: Publish to COPR
+    needs: [github-release]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish-copr.yml
+    with:
+      tag: ${{ github.ref_name }}
+      project: 'level1techs/siomon'
+      chroots: ''
+      upload: true
+    secrets:
+      COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+      COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+      COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
