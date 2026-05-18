@@ -3,8 +3,9 @@
 This guide walks you through setting up automated Linux distribution packaging
 for siomon. When a new version tag is pushed, GitHub Actions will automatically
 build and publish packages to the [AUR](https://aur.archlinux.org/) (Arch
-Linux) and a [Launchpad PPA](https://launchpad.net/) (Ubuntu/Debian). Both
-workflows can also be triggered manually.
+Linux), a [Launchpad PPA](https://launchpad.net/) (Ubuntu/Debian), and
+[Fedora COPR](https://copr.fedorainfracloud.org/). All publishing workflows
+can also be triggered manually.
 
 ## Table of Contents
 
@@ -22,15 +23,20 @@ workflows can also be triggered manually.
   - [3.2 Register Your GPG Key on Launchpad](#32-register-your-gpg-key-on-launchpad)
   - [3.3 Register Your SSH Key on Launchpad](#33-register-your-ssh-key-on-launchpad)
   - [3.4 Create a PPA](#34-create-a-ppa)
-- [Part 4: Configure GitHub Secrets](#part-4-configure-github-secrets)
-  - [4.1 Required Secrets](#41-required-secrets)
-  - [4.2 How to Add Secrets](#42-how-to-add-secrets)
-  - [4.3 Obtaining Secret Values](#43-obtaining-secret-values)
-- [Part 5: Using the Workflows](#part-5-using-the-workflows)
-  - [5.1 Automatic Publishing (Tag Push)](#51-automatic-publishing-tag-push)
-  - [5.2 Manual AUR Publishing](#52-manual-aur-publishing)
-  - [5.3 Manual PPA Publishing](#53-manual-ppa-publishing)
-- [Part 6: Troubleshooting](#part-6-troubleshooting)
+- [Part 4: Set Up Fedora COPR Publishing](#part-4-set-up-fedora-copr-publishing)
+  - [4.1 Create a Fedora Account](#41-create-a-fedora-account)
+  - [4.2 Create a COPR Project](#42-create-a-copr-project)
+  - [4.3 Generate COPR API Credentials](#43-generate-copr-api-credentials)
+- [Part 5: Configure GitHub Secrets](#part-5-configure-github-secrets)
+  - [5.1 Required Secrets](#51-required-secrets)
+  - [5.2 How to Add Secrets](#52-how-to-add-secrets)
+  - [5.3 Obtaining Secret Values](#53-obtaining-secret-values)
+- [Part 6: Using the Workflows](#part-6-using-the-workflows)
+  - [6.1 Automatic Publishing (Tag Push)](#61-automatic-publishing-tag-push)
+  - [6.2 Manual AUR Publishing](#62-manual-aur-publishing)
+  - [6.3 Manual PPA Publishing](#63-manual-ppa-publishing)
+  - [6.4 Manual COPR Publishing](#64-manual-copr-publishing)
+- [Part 7: Troubleshooting](#part-7-troubleshooting)
   - [GPG Keyserver Propagation](#gpg-keyserver-propagation)
 
 ---
@@ -42,7 +48,7 @@ The release pipeline works as follows:
 1. You push a version tag (e.g., `v0.3.0`) to the repository.
 2. The existing **Release** workflow builds binaries, publishes to crates.io,
    and creates a GitHub Release.
-3. After the GitHub Release is created, two additional workflows run in
+3. After the GitHub Release is created, three additional workflows run in
    parallel:
    - **Publish to AUR** — builds and validates the PKGBUILD in an Arch Linux
      container, then pushes to the AUR via git over SSH. Automatically
@@ -51,6 +57,9 @@ The release pipeline works as follows:
      packages for each Ubuntu series, and uploads them to a Launchpad PPA via
      SFTP. Automatically increments the repack suffix (`+dsN`) for re-runs
      of the same version to ensure a unique, uploadable version.
+   - **Publish to COPR** — vendors dependencies, builds a Fedora source RPM,
+     and submits it to Fedora COPR. Automatically increments the RPM release
+     number when re-publishing the same upstream version.
 
 Both workflows can also be triggered manually from the GitHub Actions UI.
 
@@ -310,12 +319,63 @@ sudo apt install siomon
 
 ---
 
-## Part 4: Configure GitHub Secrets
+## Part 4: Set Up Fedora COPR Publishing
+
+The workflow builds a vendored source RPM (SRPM) locally in a Fedora container
+and submits it to COPR with `copr-cli build`. COPR then builds binary RPMs from
+that SRPM in its own chroot environments.
+
+> **Important:** Do **not** configure a package source (e.g. a git/rpkg URL)
+> inside the COPR project. The `rpkg` git source type requires tarballs to be
+> present in a lookaside cache, which our spec does not use. Our workflow
+> submits a fully self-contained SRPM directly — no package source entry in the
+> COPR UI is needed or wanted.
+
+### 4.1 Create a Fedora Account
+
+1. Go to https://accounts.fedoraproject.org/ and create a Fedora account.
+2. Log in to https://copr.fedorainfracloud.org/ with that account.
+3. Note your COPR username. It is used in the project name and the
+   `COPR_USERNAME` secret.
+
+### 4.2 Create a COPR Project
+
+1. In COPR, click **New Project**.
+2. Fill in:
+   - **Project name:** `siomon`.
+   - **Description:** A brief package description.
+   - **Instructions:** User-facing install notes, if desired.
+3. Choose the Fedora chroots to build for, such as current stable Fedora
+   x86_64 and aarch64 chroots.
+4. Create the project. The default workflow target is
+   `level1techs/siomon`; change the workflow input or release workflow if the
+   owner or project name differs.
+5. **Do not add a package** to the project via the COPR UI. Leave the
+   **Packages** tab empty. The workflow submits builds directly with
+   `copr-cli build` and does not rely on any package source configured in COPR.
+
+After creation, users can enable the COPR repository and install packages with:
+
+```bash
+sudo dnf copr enable yourusername/siomon
+sudo dnf install siomon
+```
+
+### 4.3 Generate COPR API Credentials
+
+1. Go to https://copr.fedorainfracloud.org/api/ while logged in.
+2. Copy the generated `~/.config/copr` values.
+3. Store the `login`, `username`, and `token` values as GitHub repository
+   secrets named `COPR_LOGIN`, `COPR_USERNAME`, and `COPR_TOKEN`.
+
+---
+
+## Part 5: Configure GitHub Secrets
 
 The workflows read all identity and credential information from GitHub
 repository secrets. No credentials are hardcoded in the workflow files.
 
-### 4.1 Required Secrets
+### 5.1 Required Secrets
 
 | Secret | Required | Used By | Description |
 |--------|----------|---------|-------------|
@@ -327,8 +387,11 @@ repository secrets. No credentials are hardcoded in the workflow files.
 | `PKG_GIT_EMAIL` | Yes | Both | Git author email for commits and changelogs |
 | `LAUNCHPAD_SSH_PRIVATE_KEY` | Yes | PPA | Private SSH key for Launchpad SFTP upload |
 | `LAUNCHPAD_LOGIN` | Yes | PPA | Your Launchpad username |
+| `COPR_LOGIN` | Yes | COPR | COPR API login value |
+| `COPR_USERNAME` | Yes | COPR | COPR API username value |
+| `COPR_TOKEN` | Yes | COPR | COPR API token value |
 
-### 4.2 How to Add Secrets
+### 5.2 How to Add Secrets
 
 1. Go to your repository on GitHub (e.g.,
    `https://github.com/level1techs/siomon`).
@@ -343,7 +406,7 @@ repository secrets. No credentials are hardcoded in the workflow files.
 **Important:** Secret values are write-only. Once saved, you cannot view them
 again (only overwrite). Make sure you have backups of your keys.
 
-### 4.3 Obtaining Secret Values
+### 5.3 Obtaining Secret Values
 
 #### `AUR_SSH_PRIVATE_KEY`
 
@@ -415,11 +478,17 @@ Your Launchpad username. Find it by going to https://launchpad.net/ and
 looking at your profile URL: `https://launchpad.net/~yourusername` — the
 part after the `~` is your login.
 
+#### `COPR_LOGIN`, `COPR_USERNAME`, and `COPR_TOKEN`
+
+These values come from https://copr.fedorainfracloud.org/api/. Copy the
+matching `login`, `username`, and `token` values from the generated
+`~/.config/copr` snippet.
+
 ---
 
-## Part 5: Using the Workflows
+## Part 6: Using the Workflows
 
-### 5.1 Automatic Publishing (Tag Push)
+### 6.1 Automatic Publishing (Tag Push)
 
 When you push a version tag, everything happens automatically:
 
@@ -435,9 +504,9 @@ The Release workflow will:
 1. Build binaries for x86_64 and aarch64.
 2. Publish to crates.io.
 3. Create a GitHub Release.
-4. Trigger the AUR and PPA workflows in parallel.
+4. Trigger the AUR, PPA, and COPR workflows in parallel.
 
-### 5.2 Manual AUR Publishing
+### 6.2 Manual AUR Publishing
 
 To manually trigger the AUR workflow (e.g., to re-publish a failed build):
 
@@ -453,7 +522,7 @@ increments `pkgrel` (e.g., `1` → `2`). For a new upstream version, `pkgrel`
 resets to `1`. This means re-running the workflow for the same tag always
 produces a publishable update.
 
-### 5.3 Manual PPA Publishing
+### 6.3 Manual PPA Publishing
 
 To manually trigger the PPA workflow:
 
@@ -481,9 +550,38 @@ The build artifacts (`.dsc`, `.changes`, `.orig.tar.gz`) are always uploaded
 as GitHub Actions artifacts regardless of the upload setting, so you can
 inspect them.
 
+### 6.4 Manual COPR Publishing
+
+To manually trigger the COPR workflow:
+
+1. Go to the repository's **Actions** tab on GitHub.
+2. Select **Publish to COPR** in the left sidebar.
+3. Click **Run workflow**.
+4. Fill in the inputs:
+   - **tag** (required): The git tag (e.g., `v0.3.0`).
+   - **project** (default: `level1techs/siomon`): The target COPR project.
+   - **chroots** (default: empty): Optional space-separated COPR chroots. If
+     empty, COPR uses the project defaults.
+   - **upload** (default: checked): Uncheck to build the SRPM without
+     submitting it to COPR — useful for testing.
+5. Click **Run workflow**.
+
+If the Actions tab only says **There are no workflow runs yet**, make sure the
+workflow files have been pushed to the repository's default branch first. Manual
+`workflow_dispatch` workflows only become available in GitHub's Actions UI after
+GitHub sees the workflow file on the default branch. You can also open the COPR
+workflow directly at
+`https://github.com/level1techs/siomon/actions/workflows/publish-copr.yml` once
+it exists on the default branch.
+
+The workflow queries the COPR API for existing `siomon` builds and increments
+the RPM `Release` number for the current upstream version. The source RPM is
+always uploaded as a GitHub Actions artifact regardless of the upload setting,
+so you can inspect or submit it manually.
+
 ---
 
-## Part 6: Troubleshooting
+## Part 7: Troubleshooting
 
 ### AUR: "Host key verification failed"
 
@@ -553,6 +651,19 @@ Launchpad rejected the signature. Common causes:
   ```bash
   gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_FINGERPRINT
   ```
+
+### COPR: "Bad file: siomon-X.Y.Z.tar.gz: No such file or directory"
+
+COPR is trying to build from a git/rpkg package source configured in the COPR
+UI, rather than accepting the SRPM submitted by the workflow. The `rpkg` source
+type clones the git repository and runs `rpkg srpm` itself, but the source
+tarballs only exist when the workflow builds them — they are never committed to
+the repository.
+
+**Fix:** Go to your COPR project → **Packages** tab and delete any package
+entry that was added there. The workflow submits builds directly with
+`copr-cli build <project> <srpm>` and does not need or use a package source
+configured in the COPR UI. Leave the Packages tab empty.
 
 ### PPA: "Already uploaded"
 

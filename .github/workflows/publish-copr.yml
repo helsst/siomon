@@ -1,0 +1,181 @@
+name: Publish to COPR
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to build (e.g., v0.3.0)'
+        required: true
+        type: string
+      project:
+        description: 'Target COPR project (e.g., level1techs/siomon)'
+        required: false
+        default: 'level1techs/siomon'
+        type: string
+      chroots:
+        description: 'Space-separated COPR chroots, or empty for project defaults'
+        required: false
+        default: ''
+        type: string
+      upload:
+        description: 'Upload to COPR after building the SRPM'
+        required: false
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      project:
+        required: false
+        default: 'level1techs/siomon'
+        type: string
+      chroots:
+        required: false
+        default: ''
+        type: string
+      upload:
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      COPR_LOGIN:
+        required: true
+      COPR_USERNAME:
+        required: true
+      COPR_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: https://github.com/level1techs/siomon.git
+
+jobs:
+  publish:
+    name: Build and publish to COPR
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y cargo copr-cli curl git jq rpm-build rust rust-packaging systemd-rpm-macros
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version and release
+        id: version
+        env:
+          TAG: ${{ inputs.tag }}
+          COPR_PROJECT: ${{ inputs.project }}
+        run: |
+          UPSTREAM_VERSION="${TAG#v}"
+          echo "==> Resolving tag $TAG to commit hash..."
+
+          COMMIT_HASH=$(git ls-remote "$UPSTREAM_REPO" "refs/tags/${TAG}^{}" 2>/dev/null | awk '{print $1}')
+          if [ -z "$COMMIT_HASH" ]; then
+            COMMIT_HASH=$(git ls-remote "$UPSTREAM_REPO" "refs/tags/${TAG}" 2>/dev/null | awk '{print $1}')
+          fi
+          if [ -z "$COMMIT_HASH" ]; then
+            echo "::error::Could not resolve tag $TAG from $UPSTREAM_REPO"
+            exit 1
+          fi
+
+          echo "==> Querying COPR for current ${COPR_PROJECT} builds..."
+          PROJECT_PATH="${COPR_PROJECT#@}"
+          OWNER="${PROJECT_PATH%%/*}"
+          PROJECT="${PROJECT_PATH#*/}"
+          API_OWNER="$OWNER"
+          if [ "${COPR_PROJECT#@}" != "$COPR_PROJECT" ]; then
+            API_OWNER="@${OWNER}"
+          fi
+          BUILDS=$(curl -sL "https://copr.fedorainfracloud.org/api_3/build/list?ownername=${API_OWNER}&projectname=${PROJECT}&packagename=siomon")
+          MAX_RELEASE=$(echo "$BUILDS" | jq -r --arg ver "$UPSTREAM_VERSION" '
+            [.items[]?.source_package.version? // empty
+             | select(startswith($ver + "-"))
+             | sub("^" + $ver + "-"; "")
+             | capture("^(?<rel>[0-9]+)").rel
+             | tonumber] | max // 0')
+          RELEASE=$((MAX_RELEASE + 1))
+
+          echo "    $TAG -> $COMMIT_HASH"
+          echo "    RPM version-release: ${UPSTREAM_VERSION}-${RELEASE}"
+          echo "upstream_version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit_hash=$COMMIT_HASH" >> "$GITHUB_OUTPUT"
+          echo "short_commit=${COMMIT_HASH:0:7}" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Create source and vendor archives
+        env:
+          UPSTREAM_VERSION: ${{ steps.version.outputs.upstream_version }}
+          COMMIT_HASH: ${{ steps.version.outputs.commit_hash }}
+        run: |
+          mkdir -p rpm/SOURCES rpm/SPECS
+          git archive --format=tar.gz --prefix="siomon-${UPSTREAM_VERSION}/" \
+            -o "rpm/SOURCES/siomon-${UPSTREAM_VERSION}.tar.gz" "$COMMIT_HASH"
+
+          git clone --depth 1 --branch "${{ inputs.tag }}" "$UPSTREAM_REPO" "vendor-src"
+          cd vendor-src
+          cargo vendor --locked --versioned-dirs ../rpm/SOURCES/vendor > /tmp/siomon-cargo-config.toml
+          cd ../rpm/SOURCES
+          tar -czf "siomon-${UPSTREAM_VERSION}-vendor.tar.gz" vendor
+          rm -rf vendor
+
+      - name: Prepare spec
+        env:
+          UPSTREAM_VERSION: ${{ steps.version.outputs.upstream_version }}
+          COMMIT_HASH: ${{ steps.version.outputs.commit_hash }}
+          SHORT_COMMIT: ${{ steps.version.outputs.short_commit }}
+          RELEASE: ${{ steps.version.outputs.release }}
+        run: |
+          cp packaging/fedora/siomon.spec rpm/SPECS/siomon.spec
+          sed -i "s/^Version:.*/Version:        ${UPSTREAM_VERSION}/" rpm/SPECS/siomon.spec
+          sed -i "s/^Release:.*/Release:        ${RELEASE}%{?dist}/" rpm/SPECS/siomon.spec
+          sed -i "s/^%global commit .*/%global commit ${COMMIT_HASH}/" rpm/SPECS/siomon.spec
+          sed -i "s/^%global shortcommit .*/%global shortcommit ${SHORT_COMMIT}/" rpm/SPECS/siomon.spec
+
+      - name: Build source RPM
+        run: |
+          rpmbuild -bs rpm/SPECS/siomon.spec \
+            --define "_topdir ${GITHUB_WORKSPACE}/rpm"
+          ls -l rpm/SRPMS
+
+      - name: Configure COPR credentials
+        if: inputs.upload
+        env:
+          COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+          COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+          COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+        run: |
+          mkdir -p ~/.config
+          {
+            printf '[copr-cli]\n'
+            printf 'login = %s\n' "$COPR_LOGIN"
+            printf 'username = %s\n' "$COPR_USERNAME"
+            printf 'token = %s\n' "$COPR_TOKEN"
+            printf 'copr_url = https://copr.fedorainfracloud.org\n'
+          } > ~/.config/copr
+          chmod 600 ~/.config/copr
+
+      - name: Upload to COPR
+        if: inputs.upload
+        env:
+          COPR_PROJECT: ${{ inputs.project }}
+          COPR_CHROOTS: ${{ inputs.chroots }}
+        run: |
+          ARGS=(--nowait)
+          for chroot in $COPR_CHROOTS; do
+            ARGS+=(--chroot "$chroot")
+          done
+          copr-cli build "${ARGS[@]}" "$COPR_PROJECT" rpm/SRPMS/*.src.rpm
+
+      - name: Keep SRPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: siomon-copr-srpm
+          path: rpm/SRPMS/*.src.rpm
