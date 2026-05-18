@@ -115,6 +115,8 @@ jobs:
           UPSTREAM_VERSION: ${{ steps.version.outputs.upstream_version }}
           COMMIT_HASH: ${{ steps.version.outputs.commit_hash }}
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
           mkdir -p rpm/SOURCES rpm/SPECS
           git archive --format=tar.gz --prefix="siomon-${UPSTREAM_VERSION}/" \
             -o "rpm/SOURCES/siomon-${UPSTREAM_VERSION}.tar.gz" "$COMMIT_HASH"
